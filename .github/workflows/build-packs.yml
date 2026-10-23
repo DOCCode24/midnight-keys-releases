@@ -1,0 +1,35 @@
+name: Build sound packs
+on:
+  workflow_dispatch:
+  push:
+    branches: ['packs/**']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get original sample sets
+        run: |
+          set -e
+          pip install --quiet numpy soundfile
+          mkdir -p src out
+          curl -sfL --retry 5 -o src/asgp.zip "https://archive.org/download/httpswww.ir.isas.jaxa.jpcyamauchaccuratesalamander/AccurateSalamanderGrandPianoV6.2a_48khz24bit_flac.zip"
+          (cd src && unzip -q asgp.zip -d asgp)
+          git clone --depth 1 https://github.com/sfzinstruments/jlearman.jRhodes3d src/rhodes
+      - name: Build packs
+        run: python3 packs/build_packs.py src/asgp src/rhodes/jRhodes3d-mono src/rhodes/jRhodes3d-mono.sfz out && ls -la out && sha256sum out/*.bin
+      - name: Publish (not marked as latest app release)
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          cat > notes.md <<'N'
+          Sound packs for Midnight Keys. The app downloads these automatically the first time you pick the sound; you never need to download them by hand.
+          - grand: Accurate-Salamander Grand Piano V6.2a (Chisato Yamauchi, from Salamander Grand by Alexander Holm), CC BY.
+          - rhodes: jRhodes3d by Jeff Learman, samples CC BY-NC 4.0 (non-commercial).
+          N
+          gh release delete packs-v1 -y --cleanup-tag || true
+          gh release create packs-v1 out/grand.json out/grand.bin out/rhodes.json out/rhodes.bin --target main --title "Sound packs v1" --notes-file notes.md --latest=false
+      - name: Remove trigger branch
+        if: startsWith(github.ref, 'refs/heads/packs/')
+        run: git push origin --delete "${GITHUB_REF_NAME}"
